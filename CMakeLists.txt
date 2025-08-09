@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(ljs LANGUAGES C VERSION 0.1.0)
+project(ljs LANGUAGES C VERSION 0.1.1)
 
 # On Linux, machine type should be present in module path
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")

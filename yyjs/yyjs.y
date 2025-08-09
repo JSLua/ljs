@@ -42,7 +42,7 @@ typedef void *yyscan_t;
 %token P_EQ P_NE P_FEQ P_NFE P_LE P_GE
 %token P_INC P_DEC
 %token P_SHL P_ASHR P_SHR
-%token P_AND P_OR
+%token P_AND P_OR P_OPT
 %token P_ADD P_SUB P_MUL P_DIV P_POW P_MOD
 %token P_SHLA P_ASHRA P_SHRA
 %token P_BAND P_BOR P_XOR
@@ -280,9 +280,33 @@ ArgumentList:
     }
     ;
 
+OptionalChain:
+    P_OPT { OPERATOR(P_OPT, 0); } '[' Expression _M ']' {
+        yy_emit_operator(state, 0, yy_parser_create_lv(state, 0, -1));
+        $$ = $2;
+    } |
+    P_OPT IdentifierName {
+        OPERATOR(P_OPT, 0);
+        yy_emit_operator(state, 0, yy_parser_create_lv(state, 0, $2));
+    } |
+    OptionalChain '[' Expression _M ']'
+        { yy_emit_operator(state, 0, yy_parser_create_lv(state, 0, -1)); } |
+    OptionalChain '.' IdentifierName
+        { yy_emit_operator(state, 0, yy_parser_create_lv(state, 0, $3)); }
+    ;
+
+OptionalExpression:
+    MemberExpression _M OptionalChain { $$ = $3; }  |
+    CallExpression _M OptionalChain { $$ = $3; } |
+    OptionalExpression OptionalChain
+        { $$ = yy_merge_short_chains(state, $1, $2); }
+    ;
+
+
 LeftHandSideExpression:
     NewExpression |
-    CallExpression
+    CallExpression |
+    OptionalExpression { yy_fill_jmp_placeholder(state, $1 >> 16); $$ = 0; }
     ;
 
 /* ECMAScript 2015 12.4 Postfix Expressions */
@@ -587,7 +611,10 @@ BindingPropertyList:
 
 /* ECMAScript 2015 13.6 The if Statement */
 
-_Cond: Expression { OPERATOR(P_AND, $1); $$ >>= 32; };
+_Cond: Expression {
+    if (expr_type($1) == T_PRI && ($1 & 2)) $$ = 0;
+    else { OPERATOR(P_AND, $1); $$ >>= 32; }
+};
 
 IfStatement:
     KEYWORD_IF '(' _Cond ')' Statement KEYWORD_ELSE {

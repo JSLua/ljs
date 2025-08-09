@@ -478,6 +478,34 @@ testCases = [
     },
 
     {
+        name: "Partial OptionalChain support",
+        run() {
+            const $ = 'x';
+            const arr = [10, 11];
+            const obj = {
+                a: 'hello',
+                $: 0,
+                x: 43,
+                b: {val: 13},
+                arr: [11, 12]
+            };
+            const i = typeof arr[0] === "number" ? 0 : 1;
+            if (11 !== arr?.[i + 1] ||
+                'hello' !== obj?.a ||
+                12 !== obj?.arr?.[i + 1] ||
+                13 !== obj?.b?.val ||
+                obj?.['$'] !== 0 ||
+                obj?.[$] !== 43)
+                throw "Unexpected OptionalChain behaviour";
+
+            let x = 1;
+            null?.[++x];
+            if (x !== 1)
+                throw "Unexpected OptionalChain short-circuiting";
+        }
+    },
+
+    {
         name: "Builtin - Promise object",
         run() {
             if (!this.jsrt) return;  /* Not suitable for non-ljs runtimes */
@@ -516,6 +544,32 @@ testCases = [
             jsrt.flushTask();
             if (rejected)
                 throw 'The promise should not be rejected.';
+        }
+    },
+
+    {
+        name: "Builtin - RegExp and matchAll",
+        run() {
+            const input = "apple banana carrot";
+            const match = /ba([an]{2}){2}/.exec(input, 2);
+            if (match.index !== 6 || match[0] !== 'banana' || match[1] !== 'na')
+                throw 'Unexpected match result';
+            if (match.toString() !== 'banana,na')
+                throw 'Incorrect match.toString() result';
+            if (match.input !== input)
+                throw 'Match input object mismatch';
+
+            let count = 0, prefix = '';
+            for (const word of
+                    "apple banana carrot".matchAll(/([a-z])[a-z]*/)) {
+                count += 1;
+                prefix += word[1].toUpperCase();
+            }
+            if (count !== 3 || prefix !== 'ABC')
+                throw 'Unexpected matchAll result';
+
+            if ([..."apple banana carrot".matchAll('[a-z]+')].length !== 3)
+                throw 'Unexpected matchAll result';
         }
     }
 

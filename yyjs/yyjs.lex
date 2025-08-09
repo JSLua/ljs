@@ -161,6 +161,7 @@ false   { *yylval = expr_tag(T_PRI) | 1;  return TOK_PRI; }
 >>>     { return P_SHR; }
 =>      { return P_ARROW; }
 "..."   { return P_ELISION; }
+"?."    { return P_OPT; }
 [{}()[\];,<>+\-*%&|^!~?:=/.]  return *yytext;
 
 [A-Za-z$_\xc2-\xf7][A-Za-z0-9$_\x80-\xf7]* {

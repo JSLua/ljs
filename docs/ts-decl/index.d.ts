@@ -77,9 +77,8 @@ declare var jsrt : {
 };
 
 /*  Object process contains command line arguments and index-based access to
-    environment variables. Available if launched via `jol`. */
+    environment variables. Available if launched via jsrt CLI. */
 declare var process : null | {
     argv: string[],
-    env: { [name: string]: string },
-    setLooper: (runner: null | (() => void)) => void
+    env: { [name: string]: string }
 };

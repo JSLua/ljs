@@ -672,7 +672,7 @@ expr_t yy_merge_short_chains(yy_parse_state_t *state, expr_t x1, expr_t x2)
     tsc = bc_concat_chain(ctx->fun, tsc, x1 >> 16);
     fsc = bc_concat_chain(ctx->fun, fsc, x1 >> 32);
     return ((long long)tsc << 16) | ((long long)fsc << 32) |
-        x2 & V_EXPR_F_LOGICAL;
+        x2 & (V_EXPR_F_LOGICAL | V_EXPR_F_BIT_OP);
 }
 
 static expr_t
@@ -758,10 +758,7 @@ static expr_t yy_emit_increment(yy_parse_state_t *state, BCIns op, expr_t x)
 static expr_t yy_emit_logical(yy_parse_state_t *state, int opr, expr_t x)
 {
     USE_CTX(ctx);
-    if (opr == P_OR ? (expr_type(x) == T_PRI && (uint8_t)x < 2) :
-            (x == (expr_tag(T_PRI) | 2) || expr_type(x) > T_PRI))
-        return 0;  /* Expression has a constant truth */
-    else if (expr_type(x))
+    if (expr_type(x))
         x = yy_expr_discharge(state, x, 0);
 
     uint16_t tsc = x >> 16, fsc = x >> 32;
@@ -871,6 +868,12 @@ expr_t yy_emit_operator(yy_parse_state_t *state, int opr, expr_t x)
         case '!': return yy_emit_logical(state, '!', x);
         case P_TOBIT: return yy_expr_materialize(state, x, 1);
 
+        case P_OPT:  /* OptionalChain */
+            x = yy_emit_logical(state, P_OR, yy_emit_binary_operator(
+                    state, BC_ISEQV, expr_tag(T_PRI)));
+            ctx->sp++;
+            return x;
+
         case '(':
             ctx->sp += CALL_RSV;
             if (expr_type(x) == T_LV_REF) {
@@ -952,7 +955,7 @@ expr_t yy_emit_operator(yy_parse_state_t *state, int opr, expr_t x)
             return yy_emit_call(state, 1, 0);
 
         case P_ELISION:
-            yy_emit_lib_call(state, "unpack", NULL, 0, x);
+            yy_emit_lib_call(state, "jsrt", "spread", 0, x);
             setbc_b(last_bc(ctx), 0), ctx->sp--;  /* Need multiret */
             return V_EXPR_F_CALL;
 
