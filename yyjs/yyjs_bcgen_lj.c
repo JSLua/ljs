@@ -59,23 +59,19 @@ expr_t yy_close_function(yy_parse_state_t *state)
     return expr_tag(T_PROTO) | seq;
 }
 
-static void bc_transform_test(BCIns *bc, struct yy_function *fun)
-{
-    if (bc_a(*bc) & V_EXPR_F_BIT_OP)
-        /* Bit operator results are checked for non-zero */
-        *bc = BCINS_AD(BC_ISNEN ^ (bc_op(*bc) & 1),
-                       bc_d(*bc), yy_use_number(fun, 0));
-    else assert(!bc_a(*bc));
-}
-
 static void bc_materialize_chain(struct yy_function *fun,
                                  uint16_t chain, uint16_t d_target) {
     for (uint16_t next; chain; chain = next) {
         BCIns *i = fun->i_buf + chain, dest = fun->i_next;
         assert(bc_op(*i) == 255), setbc_op(i, BC_JMP);
         next = bc_d(*i);
-        if (bc_op(i[-1]) == BC_IST || bc_op(i[-1]) == BC_ISF)
-            bc_transform_test(i - 1, fun);
+        if (bc_op(i[-1]) == BC_IST || bc_op(i[-1]) == BC_ISF) {
+            if (bc_a(i[-1]) & V_EXPR_F_BIT_OP)  /* Zero test instead */
+                i[-1] = BCINS_AD(BC_ISNEN ^ (bc_op(i[-1]) & 1),
+                                 bc_d(i[-1]), yy_use_number(fun, 0));
+            if (d_target && bc_a(i[-1]) & V_EXPR_F_LOGICAL)
+                dest = d_target;
+        }
         else if (d_target) dest = d_target;
         setbc_d(i, BCBIAS_J + dest - (chain + 1));
     }
@@ -93,29 +89,21 @@ bc_append_to_chain(struct yy_function *fun, uint16_t chain, int negate) {
 
 static uint16_t
 bc_concat_chain(struct yy_function *fun, uint16_t chain, uint16_t src) {
-    if (!chain)
-        return src;
-
-    for (uint16_t ptr = chain; ptr; ) {
-        BCIns *i = &fun->i_buf[ptr];
-        assert(bc_op(*i) == 255);
-        if (!(ptr = bc_d(*i))) {
-            setbc_d(i, src);
-            break;
-        }
-    }
-
+    if (!chain) return src;
+    BCIns *i = fun->i_buf + chain;
+    while(bc_d(*i)) i = fun->i_buf + bc_d(*i);
+    setbc_d(i, src);
     return chain;
 }
 
 static int bc_chain_may_yield_bool(struct yy_function *fun, uint16_t chain)
 {
-    while (chain) {
-        BCIns *i = &fun->i_buf[chain];
+    for (BCIns *i; chain; chain = bc_d(*i)) {
+        i = fun->i_buf + chain;
         assert(bc_op(*i) == 255);
-        if (!(bc_op(i[-1]) == BC_IST || bc_op(i[-1]) == BC_ISF))
+        if (bc_op(i[-1]) != BC_IST && bc_op(i[-1]) != BC_ISF ||
+            bc_a(i[-1]) & V_EXPR_F_LOGICAL)
             return 1;
-        chain = bc_d(*i);
     }
     return 0;
 }
@@ -186,13 +174,12 @@ int yy_emit_assignment(yy_parse_state_t *state, expr_t target, int keep)
             else ctx->sp = value_pos - (id == 0xffff);
         }
 
-        if (id == 0xffff) {
+        if (id == 0xffff)
             yy_emit_ins(ctx, BCINS_ABC(
-                    BC_TSETV, value_pos, table_pos, value_pos - 1));
-            if (keep)
-                yy_emit_ins(ctx, BCINS_AD(BC_MOV, ctx->sp, value_pos));
-        }
+                    BC_TSETV, value_pos, table_pos, table_pos + 1));
         else yy_emit_safe_tset(state, value_pos, table_pos, id);
+        if (keep)
+            yy_emit_ins(ctx, BCINS_AD(BC_MOV, ctx->sp, value_pos));
     }
 
     if (!keep)
@@ -325,11 +312,6 @@ int yy_bcg_do_action(yy_parse_state_t *state, enum ParserAction type)
         case ACTION_PREPARE_OPTIONAL:
             yy_emit_ins(ctx, BCINS_AD(BC_ISNEP, ++ctx->sp, 0));
             ctx->sp--;  /* Leave slot for Initializer */
-            break;
-
-        case ACTION_PUSH_STATIC:
-            yy_emit_ins(ctx, BCINS_ABC(BC_TGETB, ctx->sp + 1, ctx->sp, 1));
-            ctx->sp++;
             break;
 
         case ACTION_EMIT_RETHROW:
@@ -672,7 +654,7 @@ expr_t yy_merge_short_chains(yy_parse_state_t *state, expr_t x1, expr_t x2)
     tsc = bc_concat_chain(ctx->fun, tsc, x1 >> 16);
     fsc = bc_concat_chain(ctx->fun, fsc, x1 >> 32);
     return ((long long)tsc << 16) | ((long long)fsc << 32) |
-        x2 & V_EXPR_F_LOGICAL;
+        x2 & (V_EXPR_F_LOGICAL | V_EXPR_F_BIT_OP);
 }
 
 static expr_t
@@ -755,13 +737,19 @@ static expr_t yy_emit_increment(yy_parse_state_t *state, BCIns op, expr_t x)
     return 0;
 }
 
+static void bc_chain_drop_val(struct yy_function *fun, uint16_t chain)
+{
+    for (BCIns *i; chain; chain = bc_d(*i)) {
+        i = fun->i_buf + chain;
+        if (bc_op(i[-1]) == BC_IST || bc_op(i[-1]) == BC_ISF)
+            setbc_a(i - 1, bc_a(i[-1]) | V_EXPR_F_LOGICAL);
+    }
+}
+
 static expr_t yy_emit_logical(yy_parse_state_t *state, int opr, expr_t x)
 {
     USE_CTX(ctx);
-    if (opr == P_OR ? (expr_type(x) == T_PRI && (uint8_t)x < 2) :
-            (x == (expr_tag(T_PRI) | 2) || expr_type(x) > T_PRI))
-        return 0;  /* Expression has a constant truth */
-    else if (expr_type(x))
+    if (expr_type(x))
         x = yy_expr_discharge(state, x, 0);
 
     uint16_t tsc = x >> 16, fsc = x >> 32;
@@ -770,11 +758,15 @@ static expr_t yy_emit_logical(yy_parse_state_t *state, int opr, expr_t x)
             BCIns *cmp = last_bc(ctx) - 1;
             setbc_op(cmp, bc_op(*cmp) ^ 1);  /* Negate cmp */
         }
-        else yy_emit_ins(ctx, BCINS_AD(BC_NOT, ctx->sp, ctx->sp));
-
+        else if (x & V_EXPR_F_BIT_OP) yy_emit_operator(state, P_EQ, ~0);
+        else {
+            yy_emit_ins(ctx, BCINS_AD(BC_ISF, V_EXPR_F_LOGICAL, ctx->sp));
+            yy_emit_jmp(state, 0);
+        }
+        bc_chain_drop_val(ctx->fun, fsc);
+        bc_chain_drop_val(ctx->fun, tsc);
         /* Return with tsc and fsc swapped */
-        return x & V_EXPR_F_LOGICAL |
-            ((expr_t)fsc << 16) | ((expr_t)tsc << 32);
+        return V_EXPR_F_LOGICAL | (expr_t)fsc << 16 | (expr_t)tsc << 32;
     }
 
     if (opr == P_OR) {
@@ -850,6 +842,8 @@ expr_t yy_emit_operator(yy_parse_state_t *state, int opr, expr_t x)
         case P_SHL: yy_emit_bit_binary_operator(lshift);
         case P_ASHR: yy_emit_bit_binary_operator(arshift);
         case P_SHR: yy_emit_bit_binary_operator(rshift);
+        case '~': yy_emit_lib_call(state, "bit", "bnot", 0, x);
+            return V_EXPR_F_BIT_OP;
 
         case P_EQ: return yy_emit_binary_operator(state, BC_ISEQV, x);
         case P_NE: return yy_emit_binary_operator(state, BC_ISNEV, x);
@@ -858,7 +852,6 @@ expr_t yy_emit_operator(yy_parse_state_t *state, int opr, expr_t x)
         case '>': return yy_emit_binary_operator(state, BC_ISGT, x);
         case P_GE: return yy_emit_binary_operator(state, BC_ISGE, x);
 
-        case '~': yy_emit_lib_call(state, "bit", "bnot", 0, x); break;
         case P_INC: return yy_emit_increment(state, BC_ADDVN, x);
         case P_DEC: return yy_emit_increment(state, BC_SUBVN, x);
         case P_UNM:
@@ -870,6 +863,12 @@ expr_t yy_emit_operator(yy_parse_state_t *state, int opr, expr_t x)
         case P_OR: return yy_emit_logical(state, P_OR, x);
         case '!': return yy_emit_logical(state, '!', x);
         case P_TOBIT: return yy_expr_materialize(state, x, 1);
+
+        case P_OPT:  /* OptionalChain */
+            x = yy_emit_logical(state, P_OR, yy_emit_binary_operator(
+                    state, BC_ISEQV, expr_tag(T_PRI)));
+            ctx->sp++;
+            return x;
 
         case '(':
             ctx->sp += CALL_RSV;
@@ -952,7 +951,7 @@ expr_t yy_emit_operator(yy_parse_state_t *state, int opr, expr_t x)
             return yy_emit_call(state, 1, 0);
 
         case P_ELISION:
-            yy_emit_lib_call(state, "unpack", NULL, 0, x);
+            yy_emit_lib_call(state, "jsrt", "spread", 0, x);
             setbc_b(last_bc(ctx), 0), ctx->sp--;  /* Need multiret */
             return V_EXPR_F_CALL;
 
@@ -1015,7 +1014,7 @@ expr_t yy_emit_operator(yy_parse_state_t *state, int opr, expr_t x)
             yy_ctx_reset_stack(ctx);
             break;
 
-        case '{':  /* Object destructuring initialization */
+        case '}':  /* Object destructuring initialization */
             for (int i = -(int)x; i < 0; i++) {
                 USE_SCOPE(ctx);
                 int field_id = yy_localize_id

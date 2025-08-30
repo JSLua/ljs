@@ -1,3 +1,10 @@
+ljs (0.1.1) unstable; urgency=medium
+
+  * compiler: Partial OptionalChain support and minor fixes
+  * runtime: Improved Generator and RegExp
+
+ -- zyxwvu Shi <i@shiyc.cn>  Sat, 30 Aug 2025 21:00:00 +0800
+
 ljs (0.1.0) unstable; urgency=medium
 
   * Initial release.

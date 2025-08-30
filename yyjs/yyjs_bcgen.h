@@ -35,7 +35,6 @@ expr_t yy_merge_short_chains(yy_parse_state_t *state, expr_t x1, expr_t x2);
 enum ParserAction {
     ACTION_OPEN_TABLE,
     ACTION_OPEN_CLASS,
-    ACTION_PUSH_STATIC,
     ACTION_PREPARE_OPTIONAL,
     ACTION_EMIT_RETHROW,
     ACTION_EMIT_CHECK_RET,

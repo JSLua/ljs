@@ -38,12 +38,22 @@ testCases = [
                 throw "true (a == 1) not yielded";
             if ((!"zzz" || a == 2) && (a == 1) != false)
                 throw "false (a == 2) not yielded";
+
+            let fun = function (a, b, c) { return !(a && b) || c; };
+            if (fun(null, "bb", "cc") !== true ||
+                fun("aa", "bb", "cc") !== "cc")
+                throw "Incorrect logical not behaviour";
+
+            let num = 5;
+            if (-!(num & 2) !== -1)
+                throw "Incorrect logical not coercion";
         }
     },
 
     {
         name: "Left Val Reference",
         tab: { a: 1 },
+        o: { n: 1 },
         d: 1,
         run() {
             this.tab.a += 2;
@@ -63,6 +73,11 @@ testCases = [
             }
             if (c != 10 || this.tab.a != 5)
                 throw "Unexpected c != 10 || a != 5";
+
+            if (this.o.n++ !== 1 || !(this.o.n & 2))
+                throw "Unexpected postfix increment result";
+            if (this.o[String.fromCharCode(110)]++ !== 2 || this.o.n !== 3)
+                throw "Unexpected postfix increment result";
 
             this.d += 2;
             let d;
@@ -200,11 +215,20 @@ testCases = [
     {
         name: "Linked-list Iterate and Sum",
         run() {
+            let sum = 0;
             let o = { val: 1, next: { val: 2, next: { val: 3 } } };
-            count = 0;
             for (; o; o = o.next)
-                count += o.val;
-            if (count != 6)
+                sum += o.val;
+
+            function *iterateList(list) {
+                for (; list; list = list.next)
+                    yield list.val;
+            }
+
+            o = { val: 4, next: { val: 5, next: { val: 6 } } };
+            for (let val of iterateList(o))
+                sum += val;
+            if (sum != 21)
                 throw `Incorrect result of sum(list): ${count}`;
         }
     },
@@ -246,8 +270,22 @@ testCases = [
     },
 
     {
-        name: "Arrow function this inheritance",
+        name: "Closure and Arrow this inheritance",
         run() {
+            let closure;
+            (function() {
+                let a = 1;
+                while (!closure) {
+                    let b = 2;
+                    {
+                        let c = 3;
+                        closure = function() { return a + b + c; };
+                    }
+                }
+            })();
+            if (closure() !== 6)
+                throw "Unexpected closure return value";
+
             var calls = 0;
             var usurper = { fun: value => {
                 calls++;
@@ -478,6 +516,34 @@ testCases = [
     },
 
     {
+        name: "Partial OptionalChain support",
+        run() {
+            const $ = 'x';
+            const arr = [10, 11];
+            const obj = {
+                a: 'hello',
+                $: 0,
+                x: 43,
+                b: {val: 13},
+                arr: [11, 12]
+            };
+            const i = typeof arr[0] === "number" ? 0 : 1;
+            if (11 !== arr?.[i + 1] ||
+                'hello' !== obj?.a ||
+                12 !== obj?.arr?.[i + 1] ||
+                13 !== obj?.b?.val ||
+                obj?.['$'] !== 0 ||
+                obj?.[$] !== 43)
+                throw "Unexpected OptionalChain behaviour";
+
+            let x = 1;
+            null?.[++x];
+            if (x !== 1)
+                throw "Unexpected OptionalChain short-circuiting";
+        }
+    },
+
+    {
         name: "Builtin - Promise object",
         run() {
             if (!this.jsrt) return;  /* Not suitable for non-ljs runtimes */
@@ -490,6 +556,13 @@ testCases = [
             if (resolve(45) != null)  throw '"resolve" return value';
             jsrt.flushTask();
             if (returnValue !== 45)
+                throw 'The promise should be fulfilled with the provided value.';
+
+            let { promise, resolve2, reject } = Promise.withResolver();
+            promise.then(value => { returnValue = value; });
+            resolve2(55);
+            jsrt.flushTask();
+            if (returnValue !== 55)
                 throw 'The promise should be fulfilled with the provided value.';
 
             let value = {};
@@ -516,6 +589,32 @@ testCases = [
             jsrt.flushTask();
             if (rejected)
                 throw 'The promise should not be rejected.';
+        }
+    },
+
+    {
+        name: "Builtin - RegExp and matchAll",
+        run() {
+            const input = "apple banana carrot";
+            const match = /ba([an]{2}){2}/.exec(input, 2);
+            if (match.index !== 6 || match[0] !== 'banana' || match[1] !== 'na')
+                throw 'Unexpected match result';
+            if (match.toString() !== 'banana,na')
+                throw 'Incorrect match.toString() result';
+            if (match.input !== input)
+                throw 'Match input object mismatch';
+
+            let count = 0, prefix = '';
+            for (const word of
+                    "apple banana carrot".matchAll(/([a-z])[a-z]*/g)) {
+                count += 1;
+                prefix += word[1].toUpperCase();
+            }
+            if (count !== 3 || prefix !== 'ABC')
+                throw 'Unexpected matchAll result';
+
+            if ([..."apple banana carrot".matchAll('[a-z]+')].length !== 3)
+                throw 'Unexpected matchAll result';
         }
     }
 

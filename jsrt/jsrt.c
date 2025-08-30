@@ -172,7 +172,7 @@ static int gen_iter_next(lua_State *L)
     }
     switch (status) {
         case LUA_YIELD:
-            lua_pushboolean(L, 1);
+            lua_settop(L, 1);
             lua_settop(th, 1), lua_xmove(th, L, 1);
             return 2;
         case LUA_OK: break;
@@ -257,19 +257,53 @@ const char resolver[] =
         "    return resolve(nil, ret)\n"
         "end";
 
+static int fun_iter_helper(lua_State *L)
+{
+    lua_settop(L, 1);
+    lua_call(L, 0, 1);
+    lua_pushvalue(L, 1);
+    return 2;
+}
+
 static int lib_iterate(lua_State *L)
 {
+    switch (lua_type(L, 1)) {
+        case LUA_TTABLE: lua_pushvalue(L, lua_upvalueindex(1)); break;
+        case LUA_TFUNCTION: lua_pushvalue(L, lua_upvalueindex(2)); break;
+        case LUA_TTHREAD: lua_pushvalue(L, lua_upvalueindex(3)); break;
+        default: return luaL_error(L, "value is not iterable");
+    }
+    lua_pushvalue(L, 1);
+    lua_pushinteger(L, 0);
+    return 3;
+}
+
+static int lib_spread(lua_State *L)
+{
+    int n_el = 0;
     if (lua_isthread(L, 1)) {
-        lua_pushcfunction(L, gen_iter_next);
-        lua_pushvalue(L, 1);
-        lua_pushboolean(L, 1);
+        lua_State *th = lua_tothread(L, 1);
+        if (th == L) return luaL_error(L, "Generator is already running");
+        int status = lua_status(th);
+        if (status == LUA_OK) {
+            if (lua_gettop(th) == 0) return 0;
+            status = lua_resume(th, lua_gettop(th) - 1);
+        }
+        while (status == LUA_YIELD) {
+            lua_settop(th, 1), lua_xmove(th, L, 1), n_el++;
+            status = lua_resume(th, 0);
+        }
+        if (status != LUA_OK)
+            return lua_xmove(th, L, 1), lua_error(L);
     } else {
         luaL_checktype(L, 1, LUA_TTABLE);
-        lua_pushvalue(L, lua_upvalueindex(1));  /* ipairs aux */
-        lua_pushvalue(L, 1);
-        lua_pushinteger(L, 0);
+        lua_settop(L, 1);
+        n_el = (int)lua_objlen(L, 1);
+        luaL_checkstack(L, n_el, "too many elements");
+        for (int i = 1; i <= n_el; i++)
+            lua_rawgeti(L, 1, i);
     }
-    return 3;
+    return n_el;
 }
 
 static const char *cc_escape[32] = {
@@ -408,7 +442,10 @@ int luaopen_jsrt(lua_State *L)
     lua_pushcclosure(L, lib_async, 1), lua_setfield(L, -2, "async");
     /* jsrt.iterate */
     lua_getglobal(L, "ipairs"), lua_newtable(L), lua_call(L, 1, 1);
-    lua_pushcclosure(L, lib_iterate, 1), lua_setfield(L, -2, "iterate");
+    lua_pushcfunction(L, fun_iter_helper);  /* LUA_TFUNCTION */
+    lua_pushcfunction(L, gen_iter_next);    /* LUA_TTHREAD */
+    lua_pushcclosure(L, lib_iterate, 3), lua_setfield(L, -2, "iterate");
+    lua_pushcfunction(L, lib_spread), lua_setfield(L, -2, "spread");
 
     /* JavaScript library search path */
     const char *js_path = getenv("LJS_PATH");

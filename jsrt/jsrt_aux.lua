@@ -70,6 +70,17 @@ function string:trimEnd() return self:gsub("%s*$", "") end
 string.trimLeft = string.trimStart
 string.trimRight = string.trimEnd
 
+string.matchAll = jsrt.generator(function (str, re)
+    if type(re) == "string" then re = RegExp(nil, re, "g") end
+    local yield, offset = coroutine.yield, 0
+    while true do
+        local match = re:exec(str, offset)
+        if match == nil then break end
+        offset = match.lastIndex
+        yield(match)
+    end
+end)
+
 if encodeURIComponent == nil then
     local gsub, format, byte = string.gsub, string.format, string.byte
     function encodeURIComponent(_, uriComponent)

@@ -14,7 +14,9 @@ add_library(yyjs STATIC
         yyjs_parse.h yyjs_parse.c)
 target_compile_options(yyjs PRIVATE -fPIC)
 target_include_directories(yyjs PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-set_target_properties(yyjs PROPERTIES POSITION_INDEPENDENT_CODE True)
+set_target_properties(yyjs PROPERTIES
+        C_VISIBILITY_PRESET hidden
+        POSITION_INDEPENDENT_CODE True)
 
 # Avoid GCC complaint about i_buf[0] access
 if (CMAKE_C_COMPILER_ID STREQUAL "GNU")

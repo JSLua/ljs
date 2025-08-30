@@ -6,9 +6,9 @@ find_path(LUA_INCLUDE_DIR lua.h PATH_SUFFIXES luajit-2.1
 add_library(jsrt SHARED jsrt.c jsrt.h jsrt_aux.h
         jsrt_regexp.c jsrt_promise.c json_parse.c)
 target_include_directories(jsrt
+        PRIVATE ${CMAKE_CURRENT_BINARY_DIR}
         PUBLIC ${CMAKE_SOURCE_DIR} ${LUA_INCLUDE_DIR})
-target_include_directories(jsrt PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-target_link_libraries(jsrt yyjs)
+target_link_libraries(jsrt PRIVATE yyjs)
 set_target_properties(jsrt PROPERTIES PREFIX "")
 
 # string.search requires `memmem` only visible with _GNU_SOURCE
