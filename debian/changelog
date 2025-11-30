@@ -1,0 +1,15 @@
+ljs (0.2.0) unstable; urgency=medium
+
+  * compiler: Partial OptionalChain support and minor fixes
+  * compiler: Local refactor and compile-time arith
+  * compiler: Const and dead branch elimination
+  * runtime: Improved Generator and RegExp
+  * runtime: libev integration
+
+ -- zyxwvu Shi <i@shiyc.cn>  Sun, 31 Aug 2025 20:00:00 +0800
+
+ljs (0.1.0) unstable; urgency=medium
+
+  * Initial release.
+
+ -- zyxwvu Shi <i@shiyc.cn>  Sat, 31 May 2025 22:00:00 +0800

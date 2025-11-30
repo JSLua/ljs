@@ -1,0 +1,13 @@
+Source: ljs
+Section: unknown
+Priority: optional
+Maintainer: zyxwvu Shi <i@shiyc.cn>
+Build-Depends: debhelper-compat (=12), cmake, bison, flex, libluajit-5.1-dev,
+ libev-dev, libreadline-dev
+Homepage: https://openhomeos.net/
+
+Package: ljs-runtime
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: JavaScript runtime and interpreter based on LuaJIT. It compiles
+ JavaScript into LuaJIT bytecode using yyjs.

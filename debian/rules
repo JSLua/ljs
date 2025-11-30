@@ -1,0 +1,13 @@
+#!/usr/bin/make -f
+
+%:
+	@dh $@
+
+override_dh_auto_configure:
+	@cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr .
+
+override_dh_auto_clean:
+	@if [ -f Makefile ]; then make clean; fi
+	@rm -rf CMakeCache.txt *.cmake CMakeFiles *.cbp \
+	    Makefile Testing install_manifest.txt
+
